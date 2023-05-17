@@ -2,16 +2,10 @@
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 TMP_FILE="${SCRIPT_DIR}/query.xhtml";
 
-query=""
-
-# Loop through each argument provided by the user
-for arg in "$@"; do
-    # Append the argument to the concatenated_args string
-    query+=" $arg"
-done
-query=$(echo "${query}" | awk '{$1=$1};1');
-if [ "$query" == "" ]; then
+if [ $# -lt 1 ]; then 
   read -p "Search anime: " query;
+else
+  query=$(echo "$@" | awk '{$1=$1};1');
 fi
 
 query=$(echo "$query" | tr ' ' '+');
@@ -21,17 +15,17 @@ rm -rf "$TMP_FILE";
 
 titles=();
 links=();
-index=0;
+sequence=0;
 
 while IFS= read -r line; do
-  if [ $index == 0 ]; then
+  if [ $sequence == 0 ]; then
     titles+=("$line");
-  elif [ $index == 1 ]; then
+  elif [ $sequence == 1 ]; then
     links+=("$line");
   fi
-  ((index+=1));
-  if [ $index == 2 ]; then
-    index=0;
+  ((sequence+=1));
+  if [ $sequence == 2 ]; then
+    sequence=0;
   fi
 done <<< "$xml_data"
 
@@ -42,14 +36,25 @@ done
 
 while true
 do
+  echo;
   read -p "Choose an option: " option;
-  if [ "$option" == "q" ]; then
+  echo;
+  if [ "$option" == "q" ] || [ "$option" == "quit" ]; then
     exit;
-  elif ! [[ "$option" =~ ^[0-9]+(,[0-9]*)?$ ]] || [ "$option" -gt "$index"  ]; then
+  elif ! [[ "$option" =~ ^[0-9]+([,-][0-9]*)?$ ]]; then
     echo "Invalid option";
     exit 1;
   else
-    transmission-remote -a "${links[$option]}" 1>/dev/null &&
-    echo -e "\nTransmission: ${titles[$option]}";
+    start="$(echo $option | tr '-' ',' | cut -d',' -f1,1)";
+    end="$(echo $option | tr '-' ',' | cut -d',' -f2,2)";
+    if [ "$start" -gt "$end" ] || [ "$end" -gt "$index" ]; then
+      echo "Invalid option";
+      exit 1;
+    fi
+    for ((i=$start; i<=$end; i++))
+    do
+      transmission-remote -a "${links[$i]}" 1>/dev/null &&
+      echo -e "Transmission: ${titles[$i]}";
+    done
   fi
 done
