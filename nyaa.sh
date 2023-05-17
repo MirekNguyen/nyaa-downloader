@@ -17,8 +17,8 @@ fi
 query=$(echo "$query" | tr ' ' '+');
 curl -s "https://nyaa.si/?page=rss&f=0&c=0_0&q=${query}" > "$TMP_FILE";
 xml_data=$(xmllint --xpath '//item/title/text() | //item/link/text()' "$TMP_FILE");
-# xmllint --xpath 'string-join(//item/title/text(), " | "), string-join(//item/link/@href, " | "), string-join(//item/description/text(), " | ")' "$TMP_FILE";
-#
+rm -rf "$TMP_FILE";
+
 titles=();
 links=();
 index=0;
@@ -35,12 +35,21 @@ while IFS= read -r line; do
   fi
 done <<< "$xml_data"
 
-# for element in "${titles[@]}"; do
-#     echo "$element"
-# done
 for index in "${!titles[@]}"; do
     element="${titles[index]}";
     printf "%2d) %s\n" "$index" "$element"
 done
 
-rm -rf "$TMP_FILE";
+while true
+do
+  read -p "Choose an option: " option;
+  if [ "$option" == "q" ]; then
+    exit;
+  elif ! [[ "$option" =~ ^[0-9]+(,[0-9]*)?$ ]] || [ "$option" -gt "$index"  ]; then
+    echo "Invalid option";
+    exit 1;
+  else
+    transmission-remote -a "${links[$option]}" 1>/dev/null &&
+    echo -e "\nTransmission: ${titles[$option]}";
+  fi
+done
