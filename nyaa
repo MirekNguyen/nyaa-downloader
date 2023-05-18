@@ -9,7 +9,7 @@ else
 fi
 
 query=$(echo "$query" | tr ' ' '+');
-curl -s "https://nyaa.si/?page=rss&f=0&c=0_0&q=${query}" > "$TMP_FILE";
+curl -s "https://nyaa.si/?page=rss&f=0&c=1_2&q=${query}" > "$TMP_FILE";
 xml_data=$(xmllint --xpath '//item/title/text() | //item/link/text()' "$TMP_FILE");
 rm -rf "$TMP_FILE";
 
