@@ -10,58 +10,67 @@ fi
 
 query=$(echo "$query" | tr ' ' '+');
 curl -s "https://nyaa.si/?page=rss&f=0&c=1_2&q=${query}" > "$TMP_FILE";
-xml_data=$(xmllint --xpath "//item/title/text() | //item/link/text() | //item/*[name()='nyaa:seeders']/text() | //item/*[name()='nyaa:size']/text()" "$TMP_FILE");
+xml_data=$(xmllint --xpath "//item/title/text() | //item/link/text() | //item/*[name()='nyaa:seeders']/text() | //item/*[name()='nyaa:size']/text()" "$TMP_FILE" | sed 'N;N;N;s/\n/\t/g' | paste -d '\n' - -);
 rm -rf "$TMP_FILE";
 
-titles=();
-links=();
-seeders=();
-size=();
-sequence=0;
-
-while IFS= read -r line; do
-  if [ $sequence == 0 ]; then
-    titles+=("$line");
-  elif [ $sequence == 1 ]; then
-    links+=("$line");
-  elif [ $sequence == 2 ]; then
-    seeders+=("$line");
-  elif [ $sequence == 3 ]; then
-    size+=("$line");
-  fi
-  ((sequence+=1));
-  if [ $sequence == 4 ]; then
-    sequence=0;
-  fi
+IFS=$'\n'
+array=()
+while read -r line; do
+    array+=("$line")
 done <<< "$xml_data"
 
-for index in "${!titles[@]}"; do
-    element="${titles[index]}";
-    printf "%2d) %-50.50s | 🌱 Seeders: %5.5s | 💾 Size: %10.10s\n" "$index" "$element" "${seeders[index]}" "${size[index]}"
-    # printf "%2d) %s | %s | %s\n" "$index" "$element" "${seeders[index]}" "${size[index]}"
-done
+
+function printItems {
+  for index in "${!array[@]}"; do
+      item="${array[index]}"
+      title=$(echo "$item" | cut -d$'\t' -f1,1);
+      seeders=$(echo "$item" | cut -d$'\t' -f3,3);
+      size=$(echo "$item" | cut -d$'\t' -f4,4);
+      printf "%2d) %-50.50s | 🌱 Seeders: %5.5s | 💾 Size: %10.10s\n" "$index" "$title" "$seeders" "$size"
+  done
+}
+printItems;
 
 while true
 do
   echo;
-  read -p "Choose an option: " option;
+  read -rp "Choose an option: " option;
   echo;
   if [ "$option" == "q" ] || [ "$option" == "quit" ]; then
     exit;
+  elif [ "$option" == "title" ]; then
+    array=($(sort -t$'\t' -k1 <<<"${array[*]}"));
+    printItems;
+  elif [ "$option" == "size" ]; then
+    array=($(sort -t$'\t' -n -r -k4 <<<"${array[*]}"));
+    printItems;
+  elif [ "$option" == "seeders" ]; then
+    array=($(sort -t$'\t' -n -r -k3 <<<"${array[*]}"));
+    printItems;
+  elif [[ "$option" =~ ^[0-9]*\ link$ ]]; then
+    option=$(echo "$option" | cut -d' ' -f1,1);
+    echo "${array[$option]}" | cut -d$'\t' -f2,2;
+  elif [[ "$option" =~ ^[0-9]*\ w$ ]]; then
+    option=$(echo "$option" | cut -d' ' -f1,1);
+    link=$(echo "${array[$option]}" | cut -d$'\t' -f2,2);
+    webtorrent download --out "$HOME"/Downloads "$link";
+    exit 0;
   elif ! [[ "$option" =~ ^[0-9]+([,-][0-9]*)?$ ]]; then
     echo "Invalid option";
     exit 1;
   else
-    start="$(echo $option | tr '-' ',' | cut -d',' -f1,1)";
-    end="$(echo $option | tr '-' ',' | cut -d',' -f2,2)";
+    start="$(echo "$option" | tr '-' ',' | cut -d',' -f1,1)";
+    end="$(echo "$option" | tr '-' ',' | cut -d',' -f2,2)";
     if [ "$start" -gt "$end" ] || [ "$end" -gt "$index" ]; then
       echo "Invalid option";
       exit 1;
     fi
-    for ((i=$start; i<=$end; i++))
+    for ((i=start; i<=end; i++))
     do
-      transmission-remote -a "${links[$i]}" 1>/dev/null &&
-      echo -e "Transmission: ${titles[$i]}";
+      title=$(echo "${array[i]}" | cut -d$'\t' -f1,1);
+      link=$(echo "${array[i]}" | cut -d$'\t' -f2,2);
+      transmission-remote -a "${link}" 1>/dev/null &&
+      echo -e "Transmission: ${title}" || echo "Transmission-daemon is not running"; exit 1;
     done
   fi
 done
