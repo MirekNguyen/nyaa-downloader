@@ -10,11 +10,13 @@ fi
 
 query=$(echo "$query" | tr ' ' '+');
 curl -s "https://nyaa.si/?page=rss&f=0&c=1_2&q=${query}" > "$TMP_FILE";
-xml_data=$(xmllint --xpath '//item/title/text() | //item/link/text()' "$TMP_FILE");
+xml_data=$(xmllint --xpath "//item/title/text() | //item/link/text() | //item/*[name()='nyaa:seeders']/text() | //item/*[name()='nyaa:size']/text()" "$TMP_FILE");
 rm -rf "$TMP_FILE";
 
 titles=();
 links=();
+seeders=();
+size=();
 sequence=0;
 
 while IFS= read -r line; do
@@ -22,16 +24,21 @@ while IFS= read -r line; do
     titles+=("$line");
   elif [ $sequence == 1 ]; then
     links+=("$line");
+  elif [ $sequence == 2 ]; then
+    seeders+=("$line");
+  elif [ $sequence == 3 ]; then
+    size+=("$line");
   fi
   ((sequence+=1));
-  if [ $sequence == 2 ]; then
+  if [ $sequence == 4 ]; then
     sequence=0;
   fi
 done <<< "$xml_data"
 
 for index in "${!titles[@]}"; do
     element="${titles[index]}";
-    printf "%2d) %s\n" "$index" "$element"
+    printf "%2d) %-50.50s | 🌱 Seeders: %5.5s | 💾 Size: %10.10s\n" "$index" "$element" "${seeders[index]}" "${size[index]}"
+    # printf "%2d) %s | %s | %s\n" "$index" "$element" "${seeders[index]}" "${size[index]}"
 done
 
 while true
