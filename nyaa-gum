@@ -1,0 +1,135 @@
+#!/bin/bash
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+TMP_FILE="${SCRIPT_DIR}/query.xhtml";
+
+if [ $# -lt 1 ]; then 
+  echo "Search anime:"
+  query=$(gum input --placeholder "Search...")
+else
+  query=$(echo "$@" | awk '{$1=$1};1');
+fi
+
+function search {
+  query=$(echo "$query" | tr ' ' '+');
+  curl -s "https://nyaa.si/?page=rss&f=0&c=1_2&q=${query}" > "$TMP_FILE" && \
+  gum spin --spinner dot --title "Searching..." -- sleep 1;
+  xml_data=$(xmllint --xpath "//item/title/text() | //item/link/text() | //item/*[name()='nyaa:seeders']/text() | //item/*[name()='nyaa:size']/text()" "$TMP_FILE" | sed 'N;N;N;s/\n/\t/g' | paste -d '\n' - -);
+  rm -rf "$TMP_FILE";
+}
+
+
+
+search;
+main() {
+  chooseOption="Single"
+  IFS=$'\n'
+  array=()
+  while read -r line; do
+      array+=("$line")
+  done <<< "$xml_data"
+  printItems;
+  chooseLinks;
+  settings;
+  IFS=" "
+  read -ra chosen_indexes <<< "$chosen"
+  echo;
+  for index in "${chosen_indexes[@]}"; do
+    str=$(echo "${items[$index]}" | cut -d')' -f2-)
+    echo "Selected:  $str"
+  done
+  echo;
+  selectedLinks;
+}
+function chooseLinks {
+  if [ "$chooseOption" == "Multiple" ]; then
+  chosen=$(gum choose --cursor-prefix "[ ] " --selected-prefix "[✓] " --no-limit "${items[@]}" \
+    | cut -d')' -f1,1 \
+    | grep -oE '[0-9]+' \
+    | xargs
+  )
+  else
+    chosen=$(gum choose " X) Settings" "${items[@]}" \
+      | cut -d')' -f1,1 \
+      | grep -oE '[0-9X]+' \
+      | xargs
+    )
+    settings;
+  fi
+  if [ "$chosen" == "" ]; then
+    exit 0;
+  fi
+}
+
+function printItems {
+  items=()
+  for index in "${!array[@]}"; do
+      item="${array[index]}"
+      title=$(echo "$item" | cut -d$'\t' -f1,1);
+      seeders=$(echo "$item" | cut -d$'\t' -f3,3);
+      size=$(echo "$item" | cut -d$'\t' -f4,4);
+      items+=("$(printf "%2d) %-50.50s | 🌱 Seeders: %5.5s | 💾 Size: %10.10s\n" "$index" "$title" "$seeders" "$size")")
+  done
+}
+function settings {
+if [ "$chosen" ==  "X" ]; then
+  settings=$(gum choose "Choose multiple" "Sort by title" "Sort by seeders" "Sort by size" "Search" "Back" "Quit")
+  printItems;
+  if [ "$settings" == "Choose multiple" ]; then
+    chooseOption="Multiple"
+  elif [ "$settings" == "Sort by title" ]; then
+    array=($(sort -t$'\t' -k1 <<<"${array[*]}"));
+  elif [ "$settings" == "Sort by seeders" ]; then
+    array=($(sort -t$'\t' -n -r -k3 <<<"${array[*]}"));
+  elif [ "$settings" == "Sort by size" ]; then
+    array=($(sort -t$'\t' -n -r -k4 <<<"${array[*]}"));
+  elif [ "$settings" == "Search" ]; then
+    query=$(gum input --placeholder "Search...")
+    search;
+    main;
+  elif [ "$settings" == "Back" ]; then
+    clear;
+    printf "\n\n";
+    main;
+  else
+    exit 0;
+  fi
+  printItems;
+  chooseLinks;
+fi
+}
+function selectedLinks {
+  if [ "$chooseOption" == "Multiple" ]; then
+    option=$(gum choose "Download" "Get links" "Back" "Quit")
+  else
+    option=$(gum choose "Download" "Download with webtorrent" "Get link" "Back" "Quit")
+  fi
+  if [ "$option" == "Download" ]; then
+    for index in "${chosen_indexes[@]}"; do
+        title=$(echo "${array[$index]}" | cut -d$'\t' -f1,1);
+        link=$(echo "${array[$index]}" | cut -d$'\t' -f2,2);
+        transmission-remote -a "${link}" 1>/dev/null &&
+        echo -e "Transmission: ${title}" || echo "Transmission-daemon is not running";
+    done
+    echo;
+  elif [ "$option" == "Get links" ]; then
+    for index in "${chosen_indexes[@]}"; do
+        title=$(echo "${array[$index]}" | cut -d$'\t' -f1,1);
+        link=$(echo "${array[$index]}" | cut -d$'\t' -f2,2);
+        echo;
+        echo "Title:  $title"
+        echo "Link:   $link"
+    done
+  elif [ "$option" == "Download with webtorrent" ]; then
+    index="${chosen_indexes[*]}"
+    link=$(echo "${array[$index]}" | cut -d$'\t' -f2,2);
+
+    webtorrent download --out "$HOME"/Downloads "$link";
+  elif [ "$option" == "Back" ]; then
+    echo "Nothing selected"
+  else
+    exit;
+  fi
+  main;
+}
+
+main "$@"
